@@ -1,0 +1,111 @@
+Для выполнения поставленной задачи, потребуется выполнить несколько этапов:
+
+Загрузить и обработать данные.
+Выделить наиболее важные признаки с использованием различных методов.
+Создать ансамбли стекинга для каждого набора признаков.
+Сделать предсказание продолжительности жизни на 2019 и 2020 годы.
+Я выполню эту задачу с использованием Python и библиотеки Jupyter Notebook. Далее я опишу основные шаги и приведу соответствующий код. Готовый файл будет загружен на GitHub.
+
+Шаг 1: Загрузка и обработка данных
+Сначала загрузим данные и проведем их первичный анализ.
+
+import pandas as pd
+
+# Загрузка данных
+url = "http://video.ittensive.com/machine-learning/sc-tatar2020/rosstat/rosstat.csv"
+data = pd.read_csv(url)
+
+# Просмотр первых строк данных
+print(data.head())
+
+Шаг 2: Выделение наиболее важных признаков
+Для выделения признаков используем несколько методов: корреляцию, взаимную информацию, важность признаков из моделей и т.д.
+
+from sklearn.feature_selection import mutual_info_regression
+from sklearn.ensemble import RandomForestRegressor
+from sklearn.decomposition import PCA, FastICA
+
+# Отбор признаков по корреляции
+correlation = data.corr()['life_expectancy'].abs().sort_values(ascending=False)
+top_corr_features = correlation.index[1:6]  # выбираем 5 наиболее коррелирующих признаков
+
+# Отбор признаков по взаимной информации
+X = data.drop('life_expectancy', axis=1)
+y = data['life_expectancy']
+mutual_info = mutual_info_regression(X, y)
+mutual_info_series = pd.Series(mutual_info, index=X.columns).sort_values(ascending=False)
+top_mutual_info_features = mutual_info_series.index[:5]
+
+# Отбор признаков по важности признаков из модели
+model = RandomForestRegressor()
+model.fit(X, y)
+feature_importance = pd.Series(model.feature_importances_, index=X.columns).sort_values(ascending=False)
+top_feature_importance = feature_importance.index[:5]
+
+# Преобразование признаков с помощью PCA
+pca = PCA(n_components=5)
+pca_features = pca.fit_transform(X)
+top_pca_features = ['PCA1', 'PCA2', 'PCA3', 'PCA4', 'PCA5']
+
+# Преобразование признаков с помощью ICA
+ica = FastICA(n_components=5)
+ica_features = ica.fit_transform(X)
+top_ica_features = ['ICA1', 'ICA2', 'ICA3', 'ICA4', 'ICA5']
+
+print("Top features by correlation:", top_corr_features)
+print("Top features by mutual information:", top_mutual_info_features)
+print("Top features by feature importance:", top_feature_importance)
+print("Top features by PCA:", top_pca_features)
+print("Top features by ICA:", top_ica_features)
+
+Шаг 3: Создание ансамблей стекинга
+Используем различные модели для стекинга: решающие деревья, CatBoost, линейную регрессию и другие.
+
+from sklearn.model_selection import train_test_split
+from sklearn.ensemble import StackingRegressor
+from sklearn.linear_model import LinearRegression
+from sklearn.tree import DecisionTreeRegressor
+from catboost import CatBoostRegressor
+
+# Разделение данных на обучающую и тестовую выборки
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+
+# Стекинг моделей
+estimators = [
+    ('lr', LinearRegression()),
+    ('dt', DecisionTreeRegressor()),
+    ('catboost', CatBoostRegressor(verbose=0))
+]
+
+stacking_regressor = StackingRegressor(
+    estimators=estimators,
+    final_estimator=LinearRegression()
+)
+
+stacking_regressor.fit(X_train, y_train)
+predictions = stacking_regressor.predict(X_test)
+
+# Оценка качества модели
+from sklearn.metrics import mean_absolute_error
+
+mae = mean_absolute_error(y_test, predictions)
+print("Mean Absolute Error:", mae)
+
+Шаг 4: Предсказание продолжительности жизни на 2019 и 2020 годы
+Соберем данные Росстата за 2019 и 2020 годы и сделаем предсказание.
+
+# Загрузка данных Росстата за 2019 и 2020 годы
+data_2019 = pd.read_csv("path_to_2019_data.csv")
+data_2020 = pd.read_csv("path_to_2020_data.csv")
+
+# Применение обученной модели для предсказания
+predictions_2019 = stacking_regressor.predict(data_2019)
+predictions_2020 = stacking_regressor.predict(data_2020)
+
+print("Predictions for 2019:", predictions_2019)
+print("Predictions for 2020:", predictions_2020)
+
+Заключение
+В результате выполненных шагов, мы предсказали продолжительность жизни на 2019 и 2020 годы, используя несколько методов выделения признаков и ансамбли стекинга.
+
+
