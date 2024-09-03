@@ -1,0 +1,74 @@
+import gym
+import numpy as np
+import matplotlib.pyplot as plt
+
+# Создаем окружение
+env = gym.make('MountainCar-v0')
+
+# Гиперпараметры
+learning_rate = 0.1
+discount_factor = 0.99
+episodes = 10000
+epsilon = 1.0
+epsilon_decay = 0.995
+min_epsilon = 0.01
+
+# Дискретизация состояния
+state_bins = [20, 20]
+state_space = [np.linspace(-1.2, 0.6, state_bins[0]), np.linspace(-0.07, 0.07, state_bins[1])]
+action_space = env.action_space.n
+
+# Инициализация Q-таблицы
+q_table = np.zeros(state_bins + [action_space])
+
+def discretize_state(state):
+    state_indices = []
+    for i, value in enumerate(state):
+        state_indices.append(np.digitize(value, state_space[i]) - 1)
+    return tuple(state_indices)
+
+def choose_action(state, epsilon):
+    if np.random.random() < epsilon:
+        return np.random.randint(action_space)
+    return np.argmax(q_table[state])
+
+def update_q_table(state, action, reward, next_state):
+    max_future_q = np.max(q_table[next_state])
+    current_q = q_table[state + (action,)]
+    new_q = (1 - learning_rate) * current_q + learning_rate * (reward + discount_factor * max_future_q)
+    q_table[state + (action,)] = new_q
+
+# Для хранения наград
+rewards = []
+
+# Обучение агента
+for episode in range(episodes):
+    state = discretize_state(env.reset())
+    total_reward = 0
+    
+    done = False
+    while not done:
+        action = choose_action(state, epsilon)
+        next_state_raw, reward, done, _ = env.step(action)
+        next_state = discretize_state(next_state_raw)
+        
+        if done and next_state_raw[0] >= 0.5:
+            reward = 0
+        
+        update_q_table(state, action, reward, next_state)
+        state = next_state
+        total_reward += reward
+    
+    epsilon = max(min_epsilon, epsilon * epsilon_decay)
+    rewards.append(total_reward)
+    
+    if episode % 100 == 0:
+        print(f"Episode: {episode}, Total Reward: {total_reward}")
+
+# График наград
+plt.plot(rewards)
+plt.xlabel('Episode')
+plt.ylabel('Total Reward')
+plt.show()
+
+env.close()
