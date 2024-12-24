@@ -1,0 +1,77 @@
+# Импорт библиотек
+import pandas as pd
+import numpy as np
+from sklearn.linear_model import LinearRegression
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import mean_squared_error
+
+# Загрузка данных
+metadata_url = "http://video.ittensive.com/machine-learning/ashrae/building_metadata.csv.gz"
+weather_train_url = "http://video.ittensive.com/machine-learning/ashrae/weather_train.csv.gz"
+train_url = "http://video.ittensive.com/machine-learning/ashrae/train.0.csv.gz"
+test_url = "http://video.ittensive.com/machine-learning/ashrae/test.csv.gz"
+weather_test_url = "http://video.ittensive.com/machine-learning/ashrae/weather_test.csv.gz"
+
+metadata = pd.read_csv(metadata_url)
+weather_train = pd.read_csv(weather_train_url)
+train = pd.read_csv(train_url)
+test = pd.read_csv(test_url)
+weather_test = pd.read_csv(weather_test_url)
+
+# Объединение данных о погоде с обучающими данными
+train = train.merge(weather_train, on=["site_id", "timestamp"], how="left")
+test = test.merge(weather_test, on=["site_id", "timestamp"], how="left")
+
+# Обработка данных
+train["timestamp"] = pd.to_datetime(train["timestamp"])
+test["timestamp"] = pd.to_datetime(test["timestamp"])
+train["weekday"] = train["timestamp"].dt.weekday
+train["is_holiday"] = train["timestamp"].dt.weekday.isin([5, 6]).astype(int)
+train["week"] = train["timestamp"].dt.isocalendar().week
+train["month"] = train["timestamp"].dt.month
+
+# Модели для каждого из 50 зданий
+buildings = train["building_id"].unique()[:50]
+submission = pd.DataFrame()
+
+# Функция для расчета предсказаний
+def calculate_model_predictions(building_id):
+    building_data = train[train["building_id"] == building_id]
+    X1 = building_data[["air_temperature", "cloud_coverage", "dew_temperature", "precip_depth_1_hr", "sea_level_pressure", "wind_direction", "wind_speed"]].fillna(0)
+    X2 = building_data[["weekday", "is_holiday"]].fillna(0)
+    X3 = building_data[["week"]].fillna(0)
+    X4 = building_data[["month"]].fillna(0)
+    y = building_data["meter_reading"]
+    
+    # Обучение моделей
+    model1 = LinearRegression().fit(X1, y)
+    model2 = LinearRegression().fit(X2, y)
+    model3 = LinearRegression().fit(X3, y)
+    model4 = LinearRegression().fit(X4, y)
+    
+    # Предсказания
+    building_test = test[test["building_id"] == building_id]
+    X1_test = building_test[["air_temperature", "cloud_coverage", "dew_temperature", "precip_depth_1_hr", "sea_level_pressure", "wind_direction", "wind_speed"]].fillna(0)
+    X2_test = building_test[["weekday", "is_holiday"]].fillna(0)
+    X3_test = building_test[["week"]].fillna(0)
+    X4_test = building_test[["month"]].fillna(0)
+    
+    predictions = (
+        3/8 * model1.predict(X1_test) +
+        3/8 * model2.predict(X2_test) +
+        1/8 * model3.predict(X3_test) +
+        1/8 * model4.predict(X4_test)
+    )
+    
+    return pd.DataFrame({
+        "row_id": building_test["row_id"],
+        "meter_reading": predictions
+    })
+
+# Расчет предсказаний для всех зданий
+for building_id in buildings:
+    submission = pd.concat([submission, calculate_model_predictions(building_id)], ignore_index=True)
+
+# Сохранение результатов
+submission.to_csv('/mnt/data/submission.csv', index=False)
+"/mnt/data/submission.csv готов"
