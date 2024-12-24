@@ -1,0 +1,84 @@
+# Импорт необходимых библиотек
+import pandas as pd
+import numpy as np
+from sklearn.model_selection import train_test_split, GridSearchCV
+from sklearn.preprocessing import StandardScaler
+from catboost import CatBoostClassifier
+from sklearn.ensemble import GradientBoostingClassifier
+import xgboost as xgb
+import lightgbm as lgb
+from sklearn.metrics import accuracy_score
+from joblib import Parallel, delayed
+
+# Загрузка данных
+train_url = "https://video.ittensive.com/machine-learning/prudential/train.csv.gz"
+test_url = "https://video.ittensive.com/machine-learning/prudential/test.csv.gz"
+submission_url = "https://video.ittensive.com/machine-learning/prudential/sample_submission.csv.gz"
+
+train = pd.read_csv(train_url)
+test = pd.read_csv(test_url)
+submission = pd.read_csv(submission_url)
+
+# Предобработка данных
+def preprocess_data(df):
+    # Приведение типов
+    for col in df.select_dtypes(include=['object']).columns:
+        df[col] = df[col].astype('category')
+    # Заполнение пропусков медианами
+    df.fillna(df.median(numeric_only=True), inplace=True)
+    # Нормализация числовых данных
+    numeric_cols = df.select_dtypes(include=[np.number]).columns
+    scaler = StandardScaler()
+    df[numeric_cols] = scaler.fit_transform(df[numeric_cols])
+    # Оптимизация памяти
+    for col in df.select_dtypes(include=['float64']).columns:
+        df[col] = df[col].astype('float32')
+    for col in df.select_dtypes(include=['int64']).columns:
+        df[col] = df[col].astype('int32')
+    return df
+
+# Преобразование данных
+train = preprocess_data(train)
+test = preprocess_data(test)
+
+# Разделение на признаки и целевую переменную
+X = train.drop(columns=['Response'])  # Заменить 'Response' на вашу целевую переменную
+y = train['Response']
+X_test = test.drop(columns=['Id'])
+
+# Разделение на обучающую и валидационную выборки
+X_train, X_val, y_train, y_val = train_test_split(X, y, test_size=0.2, random_state=42)
+
+# Настройка моделей
+catboost_model = CatBoostClassifier(verbose=0, random_state=42)
+gbc_model = GradientBoostingClassifier(random_state=42)
+xgb_model = xgb.XGBClassifier(random_state=42, use_label_encoder=False, eval_metric='mlogloss')
+lgb_model = lgb.LGBMClassifier(random_state=42)
+
+# Обучение моделей
+def train_model(model, X_train, y_train, X_val, y_val):
+    model.fit(X_train, y_train)
+    y_pred = model.predict(X_val)
+    accuracy = accuracy_score(y_val, y_pred)
+    return model, accuracy
+
+# Параллельное обучение
+models = [catboost_model, gbc_model, xgb_model, lgb_model]
+trained_models = Parallel(n_jobs=-1)(delayed(train_model)(model, X_train, y_train, X_val, y_val) for model in models)
+
+# Выбор модели для каждого класса
+best_models = {}
+for i in np.unique(y):
+    best_model = max(trained_models, key=lambda x: accuracy_score(y_val == i, x[0].predict(X_val) == i))
+    best_models[i] = best_model[0]
+
+# Предсказания для тестового набора
+final_predictions = np.zeros(X_test.shape[0])
+for i, model in best_models.items():
+    class_preds = model.predict(X_test)
+    final_predictions[class_preds == i] = i
+
+# Формирование результата
+submission['Response'] = final_predictions.astype(int)
+submission.to_csv('/mnt/data/submission.csv', index=False)
+"/mnt/data/submission.csv готов"
