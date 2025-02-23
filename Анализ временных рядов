@@ -1,0 +1,71 @@
+# Импорт необходимых библиотек
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+from keras.models import Sequential
+from keras.layers import LSTM, Dense, Dropout
+from statsmodels.tsa.statespace.sarimax import SARIMAX
+
+# Шаг 1: Загрузка данных
+url = "https://video.ittensive.com/time-series/ittensive.time.series.04.csv"
+data = pd.read_csv(url)
+
+# Шаг 2: Предобработка данных
+data['Date'] = pd.to_datetime(data['Date'])
+data.set_index('Date', inplace=True)
+
+# Проверка на пропуски
+print(data.isnull().sum())
+
+# Шаг 3: Разделение данных
+train = data[data.index < '2022-01-01']
+test = data[data.index >= '2022-01-01']
+
+# Шаг 4: Моделирование
+
+# Функция для подготовки данных для LSTM
+def create_dataset(data, time_step=1):
+    X, Y = [], []
+    for i in range(len(data) - time_step - 1):
+        a = data[i:(i + time_step), 0]
+        X.append(a)
+        Y.append(data[i + time_step, 0])
+    return np.array(X), np.array(Y)
+
+# Подготовка данных для LSTM
+time_step = 10
+train_data = train.values
+X_train, y_train = create_dataset(train_data, time_step)
+X_train = X_train.reshape(X_train.shape[0], X_train.shape[1], 1)
+
+# Создание модели LSTM
+model = Sequential()
+model.add(LSTM(50, return_sequences=True, input_shape=(X_train.shape[1], 1)))
+model.add(Dropout(0.2))
+model.add(LSTM(50, return_sequences=False))
+model.add(Dropout(0.2))
+model.add(Dense(1))
+
+model.compile(optimizer='adam', loss='mean_squared_error')
+model.fit(X_train, y_train, epochs=100, batch_size=32)
+
+# Прогнозирование с LSTM
+X_test, y_test = create_dataset(test.values, time_step)
+X_test = X_test.reshape(X_test.shape[0], X_test.shape[1], 1)
+lstm_predictions = model.predict(X_test)
+
+# Прогнозирование с SARIMA
+sarima_model = SARIMAX(train, order=(1, 1, 1), seasonal_order=(1, 1, 1, 12))
+sarima_results = sarima_model.fit()
+sarima_predictions = sarima_results.forecast(steps=len(test))
+
+# Шаг 5: Сравнение предсказаний с фактическими данными
+plt.figure(figsize=(12, 6))
+plt.plot(test.index, test.values, label='Фактические данные', color='blue')
+plt.plot(test.index[time_step:], lstm_predictions, label='LSTM Предсказания', color='orange')
+plt.plot(test.index, sarima_predictions, label='SARIMA Предсказания', color='green')
+plt.title('Сравнение предсказаний LSTM и SARIMA с фактическими данными')
+plt.xlabel('Дата')
+plt.ylabel('Курс акций')
+plt.legend()
+plt.show()
